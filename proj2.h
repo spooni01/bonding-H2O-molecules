@@ -18,10 +18,14 @@
 
 /** STRUCTS **/
 typedef struct {
-	unsigned int NO; 		// Number of oxigens atoms
-	unsigned int NH; 		// Number of hydrogens atoms
-	unsigned int molecules; // Number of molecules
-} state_t;
+	unsigned int NO; 		// Number of oxigen atoms
+	unsigned int NH; 		// Number of hydrogen atoms
+	unsigned int molecules; // Number of created molecules
+	unsigned int line;		// Number of lines
+
+	unsigned int NO_used;	// Number of used oxigen atoms
+	unsigned int NH_used;	// Number of used hydrogen atoms
+} count_t;
 
 typedef struct {
 	unsigned int NO; // Number of oxigens atoms

@@ -8,15 +8,17 @@
 #define FAILURE 1
 #define ERROR  -1
 
-#define SEMAPHORE "/xlizic00-ios-semaphore"
+#define SEMAPHORE_MOLECULE "/xlizic00-ios-semaphore-molecule"
 
 FILE *output_file = NULL;
 
-sem_t *semaphore = NULL;
-state_t *shared_memory = NULL;
+sem_t *sem_molecule = NULL;
+count_t *counter = NULL;
+
+pid_t app;
 
 
-/** FUNCTIONS **/
+/** HELP FUNCTIONS **/
 
 // Check if text is made just from integers
 bool isUnsignedNumber(char num[])
@@ -62,10 +64,26 @@ arguments_t check_arguments(int argc, char *argv[]) {
     return arg;
 }
 
+// Function will print text to terminal
+// and also write it to output_file.
+void write_down(int line, char atom_symbol, int atom_id, char message[20]) {
+    printf("%d: %c %d: %s\n", line, atom_symbol, atom_id, message);
+    fprintf(output_file, "%d: %c %d: %s\n", line, atom_symbol, atom_id, message);
+}
+
+// Function wait int miliseconds and after
+// continue.
+void wait_max(int miliseconds) {
+    usleep((rand() % miliseconds)*1000);
+}
+
+
+/** MAIN FUNCTIONS **/ 
+
 // Init of semaphores.
 void init() {
     // Unlink semaphores when previous program crash.
-    sem_unlink(SEMAPHORE);
+    sem_unlink(SEMAPHORE_MOLECULE);
 
     // Opening/creating file for output.
 	output_file = fopen("proj2.out","w");
@@ -76,18 +94,18 @@ void init() {
 	}
 
     // Create semaphores and handle errors
-    if ((semaphore = sem_open(SEMAPHORE, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+    if ((sem_molecule = sem_open(SEMAPHORE_MOLECULE, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
 	{
 		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(EXIT_FAILURE);
+        exit(FAILURE);
 	}
 
     // Create memory
-	shared_memory = mmap(NULL, sizeof(state_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,-1,0);
-	if(shared_memory == MAP_FAILED)
+	counter = mmap(NULL, sizeof(count_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,-1,0);
+	if(counter == MAP_FAILED)
 	{
 		fprintf(stderr,"Shared memory was not created.\n");
-		exit(EXIT_FAILURE);
+		exit(FAILURE);
 	}
 }
 
@@ -95,21 +113,21 @@ void init() {
 void end()
 {
 	// Destroy shared memory
-	if(munmap(shared_memory, sizeof(state_t)) == ERROR)
+	if(munmap(counter, sizeof(count_t)) == ERROR)
 	{
 		fprintf(stderr,"Cannot destroy shared memory!\n");
-		exit(EXIT_FAILURE);
+		exit(FAILURE);
 	}
 
     // Close semaphores
-	if((sem_close(semaphore)) == ERROR)
+	if((sem_close(sem_molecule)) == ERROR)
 	{
 		fprintf(stderr,"Semaphore was not closed\n");
 		exit(FAILURE);
 	}
 
     // Unlink semaphores
-	if((sem_unlink(SEMAPHORE)) == ERROR)
+	if((sem_unlink(SEMAPHORE_MOLECULE)) == ERROR)
 	{
 		fprintf(stderr,"Semaphore was not unlink\n");
 		exit(FAILURE);
@@ -130,8 +148,56 @@ int main (int argc, char *argv[])
 {
     arguments_t arguments = check_arguments(argc, &(*argv));
     init();
-    /* control */ printf("%d", arguments.NH);
+     
+    app = fork();
 
-    end();
+    // Making of molecules process
+    if(app == 0) {
+
+        
+        
+        exit(EXIT_SUCCESS);
+    }
+
+    // Main process
+    else if(app > 0) {
+        pid_t atoms = fork();
+
+        // Subprocess oxygen
+        if(atoms == 0) {
+            for (unsigned int i = 0; i < arguments.NO; i++)
+            {
+                write_down(++counter->line, 'O', ++counter->NO, "started");
+                wait_max(arguments.TI);
+
+                write_down(++counter->line, 'O', counter->NO, "going to queue");
+            }
+        }
+
+        // Subprocess hydrogen
+        else if(atoms > 0) {
+            for (unsigned int i = 0; i < arguments.NH; i++)
+            {
+                write_down(++counter->line, 'H', ++counter->NH, "started");
+                wait_max(arguments.TI);
+
+                write_down(++counter->line, 'H', counter->NH, "going to queue");      
+            }
+        }
+
+        // Error
+        else {
+            end();
+            fprintf(stderr,"Another process was not created.");
+            exit(FAILURE);
+        }
+    }
+    else {
+        end();
+        fprintf(stderr,"Another process was not created.");
+        exit(FAILURE);
+    }
+
+    
     return SUCCESS; 
 }
