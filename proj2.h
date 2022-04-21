@@ -39,4 +39,5 @@ bool 			isUnsignedNumber(char num[]);
 arguments_t 	check_arguments(int argc, char *argv[]);
 void			init();
 void			end();
+//todo: add function prototzpes
 
