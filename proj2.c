@@ -15,7 +15,6 @@
 #define SEMAPHORE_MUTEX             "/xlizic00-ios-semaphore-mutex"
 #define SEMAPHORE_MOLECULE_CREATED  "/xlizic00-ios-semaphore-molecule_created"
 
-
 FILE *output_file                   = NULL;
 sem_t *semaphore_oxigen             = NULL;
 sem_t *semaphore_hydrogen           = NULL;
@@ -26,6 +25,7 @@ sem_t *semaphore_molecule_created   = NULL;
 count_t *counter                    = NULL; 
 bool running_oxigen                 = true;
 bool running_hydrogen               = true;
+bool running_molecules_making       = true;
 pid_t atoms;
 
 
@@ -71,6 +71,12 @@ arguments_t check_arguments(int argc, char *argv[]) {
         fprintf(stderr, "Second and third argument must be in interval [0 <= TI/TB <= 1000]\n");
         exit(FAILURE);
     }
+
+    // Set arg.TI and arg.TB to 1, when it is 0
+    if(arg.TI == 0) 
+        arg.TI = 1;
+    if(arg.TB == 0)
+        arg.TB = 1;
         
     return arg;
 }
@@ -104,7 +110,6 @@ void wait_max(int miliseconds) {
 // Function will create molecule.
 void create_H2O(char atom, int num, int time_wait) {
     sem_wait(semaphore_molecule);
-    counter->molecules++;
     write_down(atom, num, "creating molecule", counter->molecules/3, "");
     sem_wait(semaphore_molecule_created);
     wait_max(time_wait);
@@ -287,7 +292,9 @@ int main(int argc, char *argv[])
                 sem_wait(semaphore_mutex);
                 counter->NO_used++;
 
-                if(arguments.NO > counter->molecules/3 && arguments.NH / 2 > counter->molecules/3) {   
+                if(arguments.NO >= counter->molecules/3 && arguments.NH / 2 >= counter->molecules/3 && arguments.NH > 1 && arguments.NO > 0) { 
+                    counter->molecules++;
+
                     if(counter->NH_used >= 2) {
                         sem_post(semaphore_hydrogen);
                         sem_post(semaphore_hydrogen);
@@ -305,7 +312,7 @@ int main(int argc, char *argv[])
                 }
                 else {
                     write_down('O', oxigen_number, "not enough H", 0, "");
-                    sem_post(semaphore_mutex);
+                    sem_post(semaphore_mutex);                  
                 }
                 exit(SUCCESS); 
             }
@@ -329,7 +336,8 @@ int main(int argc, char *argv[])
                 sem_wait(semaphore_mutex);
                 counter->NH_used++;
 
-                if(arguments.NO > counter->molecules/3 && arguments.NH / 2 > counter->molecules/3) {
+                if(arguments.NO >= counter->molecules/3 && arguments.NH / 2 >= counter->molecules/3 && arguments.NH > 1 && arguments.NO > 0) {               
+                    counter->molecules++;
                     if(counter->NH_used >= 2 && counter->NO_used >= 1) {
                         sem_post(semaphore_hydrogen);
                         sem_post(semaphore_hydrogen);
@@ -343,6 +351,7 @@ int main(int argc, char *argv[])
 
                     sem_wait(semaphore_hydrogen);
                     create_H2O('H', hydrogen_number, arguments.TB);
+                    sem_post(semaphore_mutex);
                 }
                 else {
                     write_down('H', hydrogen_number, "not enough O or H", 0, "");
@@ -354,6 +363,7 @@ int main(int argc, char *argv[])
         }
         for(unsigned int c_hydrogen=0;c_hydrogen<arguments.NO;c_hydrogen++) 
             wait(NULL);
+        
     }
     else if(atoms < 0) {
         end();
@@ -361,5 +371,6 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    wait(NULL);
     return SUCCESS; 
 }
