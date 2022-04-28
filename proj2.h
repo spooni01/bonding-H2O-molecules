@@ -18,20 +18,20 @@
 
 /** STRUCTS **/
 typedef struct {
-	unsigned int NO; 		// Number of oxigen atoms
-	unsigned int NH; 		// Number of hydrogen atoms
-	unsigned int molecules; // Number of created molecules
-	unsigned int line;		// Number of lines
+	unsigned int oxygen; 		// Number of remaining oxygen atoms
+	unsigned int hydrogen; 		// Number of remaining hydrogen atoms
+	unsigned int molecules; 	// Number of created molecules
+	unsigned int line;			// Number of lines
 
-	unsigned int NO_used;	// Number of used oxigen atoms
-	unsigned int NH_used;	// Number of used hydrogen atoms
-} count_t;
+	unsigned int act_oxygen;	// Number of used oxigen atoms
+	unsigned int act_hydrogen;	// Number of used hydrogen atoms
+} data_t;
 
 typedef struct {
-	unsigned int NO; // Number of oxigens atoms
-	unsigned int NH; // Number of hydrogens atoms
-	unsigned int TI; // The maximum time that an oxygen/hydrogen waits before forming queues for the formation of molecules. (0 <= TI <= 1000)
-	unsigned int TB; // The maximum time in milliseconds required to create a single molecule. (0 <= TB <= 1000)
+	unsigned int NO; 			// Number of oxygens atoms
+	unsigned int NH; 			// Number of hydrogens atoms
+	unsigned int TI; 			// The maximum time that an oxygen/hydrogen waits before forming queues for the formation of molecules. (0 <= TI <= 1000)
+	unsigned int TB; 			// The maximum time in milliseconds required to create a single molecule. (0 <= TB <= 1000)
 } arguments_t;
 
 /** FUNCTIONS **/
