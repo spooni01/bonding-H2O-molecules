@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <ctype.h> // using function isdigit()
+#include <ctype.h> 
 #include <semaphore.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -20,7 +20,8 @@
 typedef struct {
 	unsigned int oxygen; 			// Number of remaining oxygen atoms
 	unsigned int hydrogen; 			// Number of remaining hydrogen atoms
-	unsigned int molecules; 		// Number of created molecules
+	unsigned int bonding_atoms; 	// Number of bonding atoms
+	unsigned int molecules;			// Number of created molecules
 	unsigned int line;				// Number of lines
 
 	unsigned int act_oxygen;		// Number of used oxigen atoms

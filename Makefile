@@ -7,7 +7,7 @@ proj2: proj2.c
 	$(CC) $(CFLAGS) proj2.c -o proj2
 
 pack:
-	zip proj2.zip *.c *.h
+	zip proj2.zip *.c *.h Makefile
 
 test: proj2
 	./proj2 3 5 100 100

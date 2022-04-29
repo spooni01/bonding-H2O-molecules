@@ -170,7 +170,8 @@ void init() {
 	}
 
     // Set data->molecules to 0
-    data->molecules = 0;
+    data->bonding_atoms = 0;
+    data->molecules = 1;
 }
 
 // End process
@@ -259,35 +260,26 @@ void end() {
 
 // Function will create molecule.
 void create_H2O(char atom, int num, int time_wait) {
-    /*sem_wait(sem_molecule);
-    data->molecules++;
-    write_down(atom, num, "creating molecule", data->molecules/3, "");
-    sem_wait(sem_molecule_created);
-    wait_max(time_wait);
-    sem_post(sem_molecule_created);
-    write_down(atom, num, "molecule", data->molecules/3, "created");
-    sem_post(sem_molecule);*/
     sem_wait(sem_molecule);
     sem_wait(sem_mutex_barrier);
-    data->molecules++;
+    data->bonding_atoms++;
+    
+    // Molecule number
+    if(data->bonding_atoms % 3 == 0) {
+        data->molecules = data->bonding_atoms / 3;
+    }
     sem_post(sem_mutex_barrier);
 
-    // Molecule number
-    int molecule_number = data->molecules/3;
-    if(molecule_number < 1) {
-        molecule_number = 1;
-    }
+    write_down(atom, num, "creating molecule", data->molecules, "");
 
-    write_down(atom, num, "creating molecule", molecule_number, "");
-
-    if(data->molecules++ % 3 == 0)
+    if(data->bonding_atoms++ % 3 == 1)
         sem_post(sem_barrier);
 
     sem_wait(sem_barrier);
     sem_post(sem_barrier);    
 
     wait_max(time_wait);
-    write_down(atom, num, "molecule", molecule_number, "created");
+    write_down(atom, num, "molecule", data->molecules, "created");
     sem_post(sem_molecule);
 }
 
