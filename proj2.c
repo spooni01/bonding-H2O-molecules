@@ -14,6 +14,8 @@
 #define SEM_WRITING             "/xlizic00-ios-semaphore-writing"
 #define SEM_MOLECULE            "/xlizic00-ios-semaphore-molecule"
 #define SEM_MOLECULE_CREATED    "/xlizic00-ios-semaphore-molecule-created"
+#define SEM_BARRIER             "/xlizic00-ios-semaphore-barrier"
+#define SEM_MUTEX_BARRIER       "/xlizic00-ios-semaphore-mutex-barrier"
 
 FILE *output_file               = NULL;
 sem_t *sem_mutex                = NULL;
@@ -22,6 +24,8 @@ sem_t *sem_hydrogen             = NULL;
 sem_t *sem_writing              = NULL;
 sem_t *sem_molecule             = NULL;
 sem_t *sem_molecule_created     = NULL;
+sem_t *sem_barrier              = NULL;
+sem_t *sem_mutex_barrier        = NULL;
 
 data_t *data;
 
@@ -114,6 +118,8 @@ void init() {
     sem_unlink(SEM_WRITING);
     sem_unlink(SEM_MOLECULE);
     sem_unlink(SEM_MOLECULE_CREATED);
+    sem_unlink(SEM_BARRIER);
+    sem_unlink(SEM_MUTEX_BARRIER);
 
     // Opening/creating file for output.
 	output_file = fopen("proj2.out","w");
@@ -143,7 +149,15 @@ void init() {
 		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
         exit(FAILURE);
 	}
-    if ((sem_molecule_created = sem_open(SEM_MOLECULE_CREATED, O_CREAT | O_EXCL, 0666, -3)) == SEM_FAILED) {
+    if ((sem_molecule_created = sem_open(SEM_MOLECULE_CREATED, O_CREAT | O_EXCL, 0666, -2)) == SEM_FAILED) {
+		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
+        exit(FAILURE);
+	}
+    if ((sem_barrier = sem_open(SEM_BARRIER, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
+		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
+        exit(FAILURE);
+	}
+    if ((sem_mutex_barrier = sem_open(SEM_MUTEX_BARRIER, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
 		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
         exit(FAILURE);
 	}
@@ -155,10 +169,8 @@ void init() {
 		exit(FAILURE);
 	}
 
-    // Set data->molecules to 2, because in function create_H2O
-    // it will be divided by 3 to show number of molecules 
-    // that was created.
-    data->molecules = 2;
+    // Set data->molecules to 0
+    data->molecules = 0;
 }
 
 // End process
@@ -194,6 +206,14 @@ void end() {
 		fprintf(stderr,"Semaphore was not closed\n");
 		exit(FAILURE);
 	}
+    if((sem_close(sem_barrier)) == ERROR) {
+		fprintf(stderr,"Semaphore was not closed\n");
+		exit(FAILURE);
+	}
+    if((sem_close(sem_mutex_barrier)) == ERROR) {
+		fprintf(stderr,"Semaphore was not closed\n");
+		exit(FAILURE);
+	}
 
     // Unlink semaphores
 	if((sem_unlink(SEM_MUTEX)) == ERROR) {
@@ -220,6 +240,14 @@ void end() {
 		fprintf(stderr,"Semaphore writing was not unlink\n");
 		exit(FAILURE);
 	}
+    if((sem_unlink(SEM_BARRIER)) == ERROR) {
+		fprintf(stderr,"Semaphore writing was not unlink\n");
+		exit(FAILURE);
+	}
+    if((sem_unlink(SEM_MUTEX_BARRIER)) == ERROR) {
+		fprintf(stderr,"Semaphore writing was not unlink\n");
+		exit(FAILURE);
+	}
 
     // Close output file
 	int file_close = fclose(output_file);
@@ -231,15 +259,38 @@ void end() {
 
 // Function will create molecule.
 void create_H2O(char atom, int num, int time_wait) {
-    sem_wait(sem_molecule);
+    /*sem_wait(sem_molecule);
     data->molecules++;
     write_down(atom, num, "creating molecule", data->molecules/3, "");
     sem_wait(sem_molecule_created);
     wait_max(time_wait);
     sem_post(sem_molecule_created);
     write_down(atom, num, "molecule", data->molecules/3, "created");
+    sem_post(sem_molecule);*/
+    sem_wait(sem_molecule);
+    sem_wait(sem_mutex_barrier);
+    data->molecules++;
+    sem_post(sem_mutex_barrier);
+
+    // Molecule number
+    int molecule_number = data->molecules/3;
+    if(molecule_number < 1) {
+        molecule_number = 1;
+    }
+
+    write_down(atom, num, "creating molecule", molecule_number, "");
+
+    if(data->molecules++ % 3 == 0)
+        sem_post(sem_barrier);
+
+    sem_wait(sem_barrier);
+    sem_post(sem_barrier);    
+
+    wait_max(time_wait);
+    write_down(atom, num, "molecule", molecule_number, "created");
     sem_post(sem_molecule);
 }
+
 
 /** MAIN FUNCTION **/
 
@@ -255,14 +306,14 @@ int main(int argc, char *argv[]) {
     }
 
     for(unsigned int count_oxygen = 1; count_oxygen <= arg.NO; count_oxygen++) {
-        if(fork() == 0) {
-            /***/
-            sem_wait(sem_mutex);
+        if(fork() == 0) {  
+            srand(time(NULL) * getpid());
             write_down('O', count_oxygen, "started", 0, "");
             wait_max(arg.TI);
             write_down('O', count_oxygen, "going to queue", 0, "");
+            
+            sem_wait(sem_mutex);
             data->oxygen++;
-
             if(num_of_molecules >= data->oxygen) {
                 data->act_oxygen++;
 
@@ -278,37 +329,38 @@ int main(int argc, char *argv[]) {
                 } 
                 sem_wait(sem_oxygen);
                 create_H2O('O', count_oxygen, arg.TB);
+                sem_wait(sem_barrier);
+                sem_post(sem_mutex);
             }
             else {
                 write_down('O', count_oxygen, "not enough H", 0, "");
+                sem_post(sem_mutex);
             }
             
-            sem_post(sem_mutex);
-            /***/
             exit(SUCCESS);       
         }
     }
 
-for(unsigned int count_hydrogen = 1; count_hydrogen <= arg.NH; count_hydrogen++)    {
+    for(unsigned int count_hydrogen = 1; count_hydrogen <= arg.NH; count_hydrogen++)    {
         if(fork() == 0){
-            /***/
-            sem_wait(sem_mutex);
+            srand(time(NULL) * getpid());
             write_down('H', count_hydrogen, "started", 0, "");
             wait_max(arg.TI);
             write_down('H', count_hydrogen, "going to queue", 0, "");
+            
+            sem_wait(sem_mutex);      
 
             data->hydrogen++;
-            if(num_of_molecules * 2 >= data->hydrogen) {
+            if(num_of_molecules * 2 >= data->hydrogen) {            
                 data->act_hydrogen++;
-
                 if(data->act_hydrogen >= 2 && data->act_oxygen >= 1) {
                     sem_post(sem_hydrogen);
                     sem_post(sem_hydrogen);
                     data->act_hydrogen = data->act_hydrogen - 2;
                     sem_post(sem_oxygen);
-                    data->act_oxygen--;
+                    data->act_oxygen--;                
                 }
-                else {
+                else {    
                     sem_post(sem_mutex);
                 }  
                 sem_wait(sem_hydrogen);
@@ -316,6 +368,7 @@ for(unsigned int count_hydrogen = 1; count_hydrogen <= arg.NH; count_hydrogen++)
             }
             else {
                 write_down('H', count_hydrogen, "not enough O or H", 0, "");
+                sem_post(sem_mutex);
             }  
 
             exit(SUCCESS);         
