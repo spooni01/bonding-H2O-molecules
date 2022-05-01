@@ -1,44 +1,42 @@
-/************************************************/
-/*	    Author: Adam Ližičiar (xlizic00)	    */
-/************************************************/
+/************************************************
+* Project:      Bonding H2O molecules          
+* File:         proj2.c         
+* Author:       Adam Ližičiar (xlizic00)	
+* Description:  doc/zadanie.pdf    
+************************************************/
 
 #include "proj2.h"
 
-#define SUCCESS 0
-#define FAILURE 1
-#define ERROR  -1
+#define SUCCESS                 0
+#define FAILURE                 1
+#define ERROR                   -1
+
+#define ATOMS_IN_MOLECULE       3
 
 #define SEM_MUTEX               "/xlizic00-ios-semaphore-mutex"
 #define SEM_OXYGEN              "/xlizic00-ios-semaphore-oxygen"
 #define SEM_HYDROGEN            "/xlizic00-ios-semaphore-hydrogen"
 #define SEM_WRITING             "/xlizic00-ios-semaphore-writing"
-#define SEM_MOLECULE            "/xlizic00-ios-semaphore-molecule"
-#define SEM_MOLECULE_CREATED    "/xlizic00-ios-semaphore-molecule-created"
-#define SEM_BARRIER             "/xlizic00-ios-semaphore-barrier"
-#define SEM_MUTEX_BARRIER       "/xlizic00-ios-semaphore-mutex-barrier"
 #define SEM_BARRIER_TURNSTILE   "/xlizic00-ios-semaphore-barrier-turnstile"
 #define SEM_BARRIER_TURNSTILE_2 "/xlizic00-ios-semaphore-barrier-turnstile-2"
 #define SEM_BARRIER_MUTEX       "/xlizic00-ios-semaphore-barrier-mutex"
 
-FILE *output_file               = NULL;
 sem_t *sem_mutex                = NULL;
 sem_t *sem_oxygen               = NULL;
 sem_t *sem_hydrogen             = NULL;
 sem_t *sem_writing              = NULL;
-sem_t *sem_molecule             = NULL;
-sem_t *sem_molecule_created     = NULL;
-sem_t *sem_barrier              = NULL;
-sem_t *sem_mutex_barrier        = NULL;
 sem_t *sem_barrier_turnstile    = NULL;
 sem_t *sem_barrier_turnstile_2  = NULL;
 sem_t *sem_barrier_mutex        = NULL;
+
+FILE *output_file               = NULL;
 
 data_t *data;
 
 
 /** HELP FUNCTIONS **/
 
-// Check if text is made just from integers
+// Check if text (string!) is made just from unsigned integers
 bool isUnsignedNumber(char num[])
 {
     for (int i = 0; num[i] != 0; i++)
@@ -48,9 +46,32 @@ bool isUnsignedNumber(char num[])
     return true;
 }
 
+// Function will write text to stderr and will exit program with
+// return code 1 (=ERROR)
+void end_program_with_error(char str[100]) {
+    fprintf(stderr,str);
+    fprintf(stderr,"\n");
+    exit(FAILURE);
+}
+
+// Calculates the current molecule number and returns
+// it as an integer.
+void calculate_molecule_number() {
+    if(data->bonding_atoms > ATOMS_IN_MOLECULE - 1) {
+        if(data->bonding_atoms % ATOMS_IN_MOLECULE == 1) 
+            data->molecules = (data->bonding_atoms + 2) / ATOMS_IN_MOLECULE;        
+        
+        else if(data->bonding_atoms % ATOMS_IN_MOLECULE == 2) 
+            data->molecules = (data->bonding_atoms + 1) / ATOMS_IN_MOLECULE;     
+        
+        else 
+            data->molecules = data->bonding_atoms / ATOMS_IN_MOLECULE;      
+    }
+}
+
 // Function will check, if there is right number of arguments
 // and also if their format is correct.
-// Format: ./proj2 {INT} {INT} {INT} {INT}
+// Correct format: ./proj2 {INT} {INT} {INT} {INT}
 arguments_t check_arguments(int argc, char *argv[]) {
     if(argc != 5) {
         fprintf(stderr, "Stdin must have 4 arguments, format: ./proj2 {INT} {INT} {INT} {INT}\n");
@@ -71,34 +92,40 @@ arguments_t check_arguments(int argc, char *argv[]) {
         atoi(argv[4]), // TB
     };
 
-    // Check if third or fourth argument is 0 <= TI/TB <= 1000.
-    // Don't need to test, if arg.TI or arg.TB is less than 0,
+    // Check if third or fourth argument is in interval 0 <= TI/TB <= 1000.
+    // Do not need to test, if arg.TI or arg.TB is less than 0,
     // because it is test in isUnsignedNumber() function.
     if(1000 < arg.TI || 1000 < arg.TB) {
         fprintf(stderr, "Second and third argument must be in interval [0 <= TI/TB <= 1000]\n");
         exit(FAILURE);
     }
 
-    // Set arg.TI and arg.TB to 1, when it is 0
+    // Set arg.TI and arg.TB to 1, when it is 0,
+    // because time must be minimum 1
     if(arg.TI == 0) 
         arg.TI = 1;
     if(arg.TB == 0)
         arg.TB = 1;
         
+
     return arg;
 }
 
-// Function will print text to terminal
-// and also write it to output_file.
+// Function will print text to terminal and also write it to output_file.
+// If molecule_num is set to 0, function will print text in format for atoms,
+// otherwise function will print text in format for molecules.
 void write_down(char atom_symbol, int atom_id, char message[30], int molecule_num, char last_word[20]) {
+    // This semaphore protects the correct row order
     sem_wait(sem_writing);
 
     data->line++;
 
+    // Message for molecules
     if(molecule_num != 0) {
         printf("%d: %c %d: %s %d %s\n", data->line, atom_symbol, atom_id, message, molecule_num, last_word);
         fprintf(output_file, "%d: %c %d: %s %d %s\n", data->line, atom_symbol, atom_id, message, molecule_num, last_word);
     }
+    // Message for atoms
     else {
         printf("%d: %c %d: %s %s\n", data->line, atom_symbol, atom_id, message, last_word);
         fprintf(output_file, "%d: %c %d: %s %s\n", data->line, atom_symbol, atom_id, message, last_word);
@@ -108,30 +135,36 @@ void write_down(char atom_symbol, int atom_id, char message[30], int molecule_nu
     sem_post(sem_writing);
 }
 
-// Function wait 'int miliseconds' and after that
+// Program will wait maximum 'int miliseconds' and after that
 // continues.
 void wait_max(int miliseconds) {
     usleep((rand() % miliseconds)*1000);
 }
 
+// Count number of molecules that will be created
+int predicted_number_of_molecules(unsigned int NO, unsigned int NH) {
+    unsigned int num_of_molecules = NO;
+    if(NH/2 < num_of_molecules) {
+        num_of_molecules = NH / 2;
+    }
+
+    return num_of_molecules;
+}
+
 /** MAIN FUNCTIONS **/ 
 
-// Init of semaphores.
+// Initialization function
 void init() {
-    // Unlink semaphores when previous program crash.
+    // Unlink semaphores in case previous program crash
     sem_unlink(SEM_MUTEX);
     sem_unlink(SEM_OXYGEN);
     sem_unlink(SEM_HYDROGEN);
     sem_unlink(SEM_WRITING);
-    sem_unlink(SEM_MOLECULE);
-    sem_unlink(SEM_MOLECULE_CREATED);
-    sem_unlink(SEM_BARRIER);
-    sem_unlink(SEM_MUTEX_BARRIER);
     sem_unlink(SEM_BARRIER_TURNSTILE);
     sem_unlink(SEM_BARRIER_TURNSTILE_2);
     sem_unlink(SEM_BARRIER_MUTEX);
 
-    // Opening/creating file for output.
+    // Opening/creating file for output text
 	output_file = fopen("proj2.out","w");
 	if(output_file == NULL) {
 		fprintf(stderr,"File proj2.out can not be open!\n");
@@ -139,244 +172,106 @@ void init() {
 	}
 
     // Create semaphores and handle errors
-    if ((sem_mutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_oxygen = sem_open(SEM_OXYGEN, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_hydrogen = sem_open(SEM_HYDROGEN, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_writing = sem_open(SEM_WRITING, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_molecule = sem_open(SEM_MOLECULE, O_CREAT | O_EXCL, 0666, 3)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_molecule_created = sem_open(SEM_MOLECULE_CREATED, O_CREAT | O_EXCL, 0666, -2)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_barrier = sem_open(SEM_BARRIER, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_mutex_barrier = sem_open(SEM_MUTEX_BARRIER, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_barrier_turnstile = sem_open(SEM_BARRIER_TURNSTILE, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_barrier_turnstile_2 = sem_open(SEM_BARRIER_TURNSTILE_2, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
-    if ((sem_barrier_mutex = sem_open(SEM_BARRIER_MUTEX, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
-		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
-        exit(FAILURE);
-	}
+    if ((sem_mutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+        end_program_with_error("Semaphore was not created!");
+    if ((sem_oxygen = sem_open(SEM_OXYGEN, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) 
+		end_program_with_error("Semaphore was not created!");
+    if ((sem_hydrogen = sem_open(SEM_HYDROGEN, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) 
+		end_program_with_error("Semaphore was not created!");
+    if ((sem_writing = sem_open(SEM_WRITING, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) 
+		end_program_with_error("Semaphore was not created!");
+    if ((sem_barrier_turnstile = sem_open(SEM_BARRIER_TURNSTILE, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+		end_program_with_error("Semaphore was not created!");
+    if ((sem_barrier_turnstile_2 = sem_open(SEM_BARRIER_TURNSTILE_2, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) 
+		end_program_with_error("Semaphore was not created!");
+    if ((sem_barrier_mutex = sem_open(SEM_BARRIER_MUTEX, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) 
+		end_program_with_error("Semaphore was not created!");
 
     // Create memory
 	data = mmap(NULL, sizeof(data_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,-1,0);
-	if(data == MAP_FAILED) {
-		fprintf(stderr,"Shared memory was not created.\n");
-		exit(FAILURE);
-	}
-
-    // Set data->molecules to 0
+	if(data == MAP_FAILED) 
+        end_program_with_error("Shared memory was not created.");
+	
+    // Preset data for proper operations
     data->bonding_atoms = 0;
     data->molecules = 1;
     data->queueing_atoms = 0;
 }
 
-// End process
+// Final function
 void end() {
 	// Destroy shared memory
-	if(munmap(data, sizeof(data_t)) == ERROR) {
-		fprintf(stderr,"Cannot destroy shared memory!\n");
-		exit(FAILURE);
-	}
+	if(munmap(data, sizeof(data_t)) == ERROR) 
+		end_program_with_error("Cannot destroy shared memory.");
 
     // Close semaphores
-    if((sem_close(sem_mutex)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_oxygen)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_hydrogen)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_writing)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_molecule)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_molecule_created)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_barrier)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_mutex_barrier)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_barrier_turnstile)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_barrier_turnstile_2)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
-    if((sem_close(sem_barrier_mutex)) == ERROR) {
-		fprintf(stderr,"Semaphore was not closed\n");
-		exit(FAILURE);
-	}
+    if((sem_close(sem_mutex)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_oxygen)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_hydrogen)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_writing)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_barrier_turnstile)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_barrier_turnstile_2)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
+    if((sem_close(sem_barrier_mutex)) == ERROR) 
+		end_program_with_error("Semaphore was not closed.");
 
     // Unlink semaphores
-	if((sem_unlink(SEM_MUTEX)) == ERROR) {
-		fprintf(stderr,"Semaphore oxygen was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_OXYGEN)) == ERROR) {
-		fprintf(stderr,"Semaphore hydrogen was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_HYDROGEN)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_WRITING)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_MOLECULE)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_MOLECULE_CREATED)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_BARRIER)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_MUTEX_BARRIER)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_BARRIER_TURNSTILE)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_BARRIER_TURNSTILE_2)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
-    if((sem_unlink(SEM_BARRIER_MUTEX)) == ERROR) {
-		fprintf(stderr,"Semaphore writing was not unlink\n");
-		exit(FAILURE);
-	}
+	if((sem_unlink(SEM_MUTEX)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_OXYGEN)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_HYDROGEN)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_WRITING)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_BARRIER_TURNSTILE)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_BARRIER_TURNSTILE_2)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
+    if((sem_unlink(SEM_BARRIER_MUTEX)) == ERROR) 
+		end_program_with_error("Semaphore was not unlink.");
 
     // Close output file
 	int file_close = fclose(output_file);
-	if(file_close == EOF) {
-		fprintf(stderr,"Output file was not closed!\n");
-		exit(FAILURE);
-	}
+	if(file_close == EOF) 
+		end_program_with_error("Output file was not closed.");
 }
 
-// Function will create molecule.
+// Function will create molecule from 
+// two hydrogens and one oxygen.
 void create_H2O(char atom, int num, int time_wait) {
-    /*sem_wait(sem_molecule);
-    sem_wait(sem_mutex_barrier);
-    data->bonding_atoms++;
-    
-    // Molecule number
-    if(data->bonding_atoms > 2) {
-        if(data->bonding_atoms % 3 == 1) {
-            data->molecules = (data->bonding_atoms+2)/3;
-        }
-        else if(data->bonding_atoms % 3 == 2) {
-            data->molecules = (data->bonding_atoms+1)/3;
-        }
-        else {
-            data->molecules = data->bonding_atoms / 3;
-        }
-    }
-
-    // Set static molecule number to avoid change of molecule ID
-    int static_molecule_number = data->molecules;
-
-    sem_post(sem_mutex_barrier);
-
-    write_down(atom, num, "creating molecule", static_molecule_number, "");
-
-    if(data->bonding_atoms % 3 == 0)
-        sem_post(sem_barrier);
-
-    sem_wait(sem_barrier);
-    sem_post(sem_barrier);    
-
-    wait_max(time_wait);
-    write_down(atom, num, "molecule", static_molecule_number, "created");
-    sem_post(sem_molecule);*/
-
-
-    // Čakanie 1
+    // Waiting for the arrival of two hydrogens
+    // and one oxygen
     sem_wait(sem_barrier_mutex);
         data->queueing_atoms++;
+        data->bonding_atoms++;
 
-        if(data->queueing_atoms == 3) {
+        if(data->queueing_atoms == ATOMS_IN_MOLECULE) {
             sem_wait(sem_barrier_turnstile_2);
             sem_post(sem_barrier_turnstile);
         }
 
-        // Molecule number
-        data->bonding_atoms++; 
-        if(data->bonding_atoms > 2) {
-            if(data->bonding_atoms % 3 == 1) {
-                data->molecules = (data->bonding_atoms+2)/3;
-            }
-            else if(data->bonding_atoms % 3 == 2) {
-                data->molecules = (data->bonding_atoms+1)/3;
-            }
-            else {
-                data->molecules = data->bonding_atoms / 3;
-            }
-        }
+        calculate_molecule_number();
+ 
         // Set static molecule number to avoid change of molecule ID
         int static_molecule_number = data->molecules;
     sem_post(sem_barrier_mutex);
+    
+    // Starting creating molecule, than waiting random time
     write_down(atom, num, "creating molecule", static_molecule_number, "");
     wait_max(time_wait);
-
     sem_wait(sem_barrier_turnstile);
     sem_post(sem_barrier_turnstile);
 
-    // Critical point
+    // Molecule is created
     write_down(atom, num, "molecule", static_molecule_number, "created");
 
-    // Čakanie 2
+    // Waiting while all atoms are used in molecule
     sem_wait(sem_barrier_mutex);
         data->queueing_atoms--;
         if(data->queueing_atoms == 0) {
@@ -385,97 +280,112 @@ void create_H2O(char atom, int num, int time_wait) {
         }
     sem_post(sem_barrier_mutex);
 
+    // Semaphore for end of molecule creating
     sem_wait(sem_barrier_turnstile_2);
     sem_post(sem_barrier_turnstile_2);
 }
 
+// Create oxygen
+void create_oxygen(unsigned int count_oxygen, unsigned int num_of_molecules, arguments_t arg) {
+    srand(time(NULL) * getpid());
+    write_down('O', count_oxygen, "started", 0, "");
+    wait_max(arg.TI);
+    write_down('O', count_oxygen, "going to queue", 0, "");
+
+    // Semaphore to make the calculation of atoms in a queue correct        
+    sem_wait(sem_mutex);
+    data->oxygen++;
+        
+    // There is enough atoms to form a molecule
+    if(num_of_molecules >= data->oxygen) {
+        data->act_oxygen++;
+
+        // Check if there is enought atoms to create molecule
+        if(data->act_hydrogen >= 2) {
+            sem_post(sem_hydrogen);
+            sem_post(sem_hydrogen);
+            data->act_hydrogen = data->act_hydrogen - 2;
+            sem_post(sem_oxygen);
+            data->act_oxygen--;
+        }
+        else 
+            sem_post(sem_mutex);
+             
+        sem_wait(sem_oxygen);
+        create_H2O('O', count_oxygen, arg.TB);
+        sem_post(sem_mutex);
+    }
+
+    // There is not enough atoms to form a molecule
+    else {
+        write_down('O', count_oxygen, "not enough H", 0, "");
+        sem_post(sem_mutex);
+    }
+            
+    exit(SUCCESS); 
+}
+
+// Create hydrogen
+void create_hydrogen(unsigned int count_hydrogen, unsigned int num_of_molecules, arguments_t arg) {
+    srand(time(NULL) * getpid());
+    write_down('H', count_hydrogen, "started", 0, "");
+    wait_max(arg.TI);
+    write_down('H', count_hydrogen, "going to queue", 0, "");
+
+    // Semaphore to make the calculation of atoms in a queue correct             
+    sem_wait(sem_mutex);      
+
+    data->hydrogen++;
+    if(num_of_molecules * 2 >= data->hydrogen) {            
+        data->act_hydrogen++;
+
+        // Check if there is enought atoms to create molecule
+        if(data->act_hydrogen >= 2 && data->act_oxygen >= 1) {
+            sem_post(sem_hydrogen);
+            sem_post(sem_hydrogen);
+            data->act_hydrogen = data->act_hydrogen - 2;
+            sem_post(sem_oxygen);
+            data->act_oxygen--;                
+        }
+        else    
+            sem_post(sem_mutex);
+              
+        sem_wait(sem_hydrogen);
+        create_H2O('H', count_hydrogen, arg.TB);
+    }
+    else {
+        write_down('H', count_hydrogen, "not enough O or H", 0, "");
+        sem_post(sem_mutex);
+    }  
+
+    exit(SUCCESS); 
+}
 
 /** MAIN FUNCTION **/
 
 int main(int argc, char *argv[]) {
+    // Check arguments, do initialization procedures
+    // and count number of molecules that will be created
     arguments_t arg = check_arguments(argc, &(*argv));
-
     init();
-    
-    // Count number of molecules that will be created
-    unsigned int num_of_molecules = arg.NO;
-    if(arg.NH/2 < num_of_molecules) {
-        num_of_molecules = arg.NH / 2;
-    }
+    unsigned int num_of_molecules = predicted_number_of_molecules(arg.NO, arg.NH);
 
-    for(unsigned int count_oxygen = 1; count_oxygen <= arg.NO; count_oxygen++) {
-        if(fork() == 0) {  
-            srand(time(NULL) * getpid());
-            write_down('O', count_oxygen, "started", 0, "");
-            wait_max(arg.TI);
-            write_down('O', count_oxygen, "going to queue", 0, "");
-            
-            sem_wait(sem_mutex);
-            data->oxygen++;
-            if(num_of_molecules >= data->oxygen) {
-                data->act_oxygen++;
 
-                if(data->act_hydrogen >= 2) {
-                    sem_post(sem_hydrogen);
-                    sem_post(sem_hydrogen);
-                    data->act_hydrogen = data->act_hydrogen - 2;
-                    sem_post(sem_oxygen);
-                    data->act_oxygen--;
-                }
-                else {
-                    sem_post(sem_mutex);
-                } 
-                sem_wait(sem_oxygen);
-                create_H2O('O', count_oxygen, arg.TB);
-                //sem_wait(sem_barrier);
-                sem_post(sem_mutex);
-            }
-            else {
-                write_down('O', count_oxygen, "not enough H", 0, "");
-                sem_post(sem_mutex);
-            }
-            
-            exit(SUCCESS);       
-        }
-    }
+    // Create oxygens
+    for(unsigned int count_oxygen = 1; count_oxygen <= arg.NO; count_oxygen++)
+        if(fork() == 0)   
+            create_oxygen(count_oxygen, num_of_molecules, arg);  
 
-    for(unsigned int count_hydrogen = 1; count_hydrogen <= arg.NH; count_hydrogen++)    {
-        if(fork() == 0){
-            srand(time(NULL) * getpid());
-            write_down('H', count_hydrogen, "started", 0, "");
-            wait_max(arg.TI);
-            write_down('H', count_hydrogen, "going to queue", 0, "");
-            
-            sem_wait(sem_mutex);      
+    // Create hydrogens
+    for(unsigned int count_hydrogen = 1; count_hydrogen <= arg.NH; count_hydrogen++) 
+        if(fork() == 0)
+            create_hydrogen(count_hydrogen, num_of_molecules, arg);
+                    
 
-            data->hydrogen++;
-            if(num_of_molecules * 2 >= data->hydrogen) {            
-                data->act_hydrogen++;
-                if(data->act_hydrogen >= 2 && data->act_oxygen >= 1) {
-                    sem_post(sem_hydrogen);
-                    sem_post(sem_hydrogen);
-                    data->act_hydrogen = data->act_hydrogen - 2;
-                    sem_post(sem_oxygen);
-                    data->act_oxygen--;                
-                }
-                else {    
-                    sem_post(sem_mutex);
-                }  
-                sem_wait(sem_hydrogen);
-                create_H2O('H', count_hydrogen, arg.TB);
-            }
-            else {
-                write_down('H', count_hydrogen, "not enough O or H", 0, "");
-                sem_post(sem_mutex);
-            }  
-
-            exit(SUCCESS);         
-        }
-    }
-
+    // Wait while all forks are done
     for(unsigned int i = 0; i < arg.NH+arg.NO; i++)
         wait(NULL);
-
     while(wait(NULL) > 0);
+
     return SUCCESS; 
 }
