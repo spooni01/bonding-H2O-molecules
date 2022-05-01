@@ -16,6 +16,9 @@
 #define SEM_MOLECULE_CREATED    "/xlizic00-ios-semaphore-molecule-created"
 #define SEM_BARRIER             "/xlizic00-ios-semaphore-barrier"
 #define SEM_MUTEX_BARRIER       "/xlizic00-ios-semaphore-mutex-barrier"
+#define SEM_BARRIER_TURNSTILE   "/xlizic00-ios-semaphore-barrier-turnstile"
+#define SEM_BARRIER_TURNSTILE_2 "/xlizic00-ios-semaphore-barrier-turnstile-2"
+#define SEM_BARRIER_MUTEX       "/xlizic00-ios-semaphore-barrier-mutex"
 
 FILE *output_file               = NULL;
 sem_t *sem_mutex                = NULL;
@@ -26,6 +29,9 @@ sem_t *sem_molecule             = NULL;
 sem_t *sem_molecule_created     = NULL;
 sem_t *sem_barrier              = NULL;
 sem_t *sem_mutex_barrier        = NULL;
+sem_t *sem_barrier_turnstile    = NULL;
+sem_t *sem_barrier_turnstile_2  = NULL;
+sem_t *sem_barrier_mutex        = NULL;
 
 data_t *data;
 
@@ -121,6 +127,9 @@ void init() {
     sem_unlink(SEM_MOLECULE_CREATED);
     sem_unlink(SEM_BARRIER);
     sem_unlink(SEM_MUTEX_BARRIER);
+    sem_unlink(SEM_BARRIER_TURNSTILE);
+    sem_unlink(SEM_BARRIER_TURNSTILE_2);
+    sem_unlink(SEM_BARRIER_MUTEX);
 
     // Opening/creating file for output.
 	output_file = fopen("proj2.out","w");
@@ -162,6 +171,18 @@ void init() {
 		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
         exit(FAILURE);
 	}
+    if ((sem_barrier_turnstile = sem_open(SEM_BARRIER_TURNSTILE, O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED) {
+		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
+        exit(FAILURE);
+	}
+    if ((sem_barrier_turnstile_2 = sem_open(SEM_BARRIER_TURNSTILE_2, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
+		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
+        exit(FAILURE);
+	}
+    if ((sem_barrier_mutex = sem_open(SEM_BARRIER_MUTEX, O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED) {
+		fprintf(stderr,"Semaphore was not created:\n %s\n",strerror(errno));
+        exit(FAILURE);
+	}
 
     // Create memory
 	data = mmap(NULL, sizeof(data_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,-1,0);
@@ -173,6 +194,7 @@ void init() {
     // Set data->molecules to 0
     data->bonding_atoms = 0;
     data->molecules = 1;
+    data->queueing_atoms = 0;
 }
 
 // End process
@@ -216,6 +238,18 @@ void end() {
 		fprintf(stderr,"Semaphore was not closed\n");
 		exit(FAILURE);
 	}
+    if((sem_close(sem_barrier_turnstile)) == ERROR) {
+		fprintf(stderr,"Semaphore was not closed\n");
+		exit(FAILURE);
+	}
+    if((sem_close(sem_barrier_turnstile_2)) == ERROR) {
+		fprintf(stderr,"Semaphore was not closed\n");
+		exit(FAILURE);
+	}
+    if((sem_close(sem_barrier_mutex)) == ERROR) {
+		fprintf(stderr,"Semaphore was not closed\n");
+		exit(FAILURE);
+	}
 
     // Unlink semaphores
 	if((sem_unlink(SEM_MUTEX)) == ERROR) {
@@ -250,6 +284,18 @@ void end() {
 		fprintf(stderr,"Semaphore writing was not unlink\n");
 		exit(FAILURE);
 	}
+    if((sem_unlink(SEM_BARRIER_TURNSTILE)) == ERROR) {
+		fprintf(stderr,"Semaphore writing was not unlink\n");
+		exit(FAILURE);
+	}
+    if((sem_unlink(SEM_BARRIER_TURNSTILE_2)) == ERROR) {
+		fprintf(stderr,"Semaphore writing was not unlink\n");
+		exit(FAILURE);
+	}
+    if((sem_unlink(SEM_BARRIER_MUTEX)) == ERROR) {
+		fprintf(stderr,"Semaphore writing was not unlink\n");
+		exit(FAILURE);
+	}
 
     // Close output file
 	int file_close = fclose(output_file);
@@ -261,7 +307,7 @@ void end() {
 
 // Function will create molecule.
 void create_H2O(char atom, int num, int time_wait) {
-    sem_wait(sem_molecule);
+    /*sem_wait(sem_molecule);
     sem_wait(sem_mutex_barrier);
     data->bonding_atoms++;
     
@@ -293,7 +339,54 @@ void create_H2O(char atom, int num, int time_wait) {
 
     wait_max(time_wait);
     write_down(atom, num, "molecule", static_molecule_number, "created");
-    sem_post(sem_molecule);
+    sem_post(sem_molecule);*/
+
+
+    // Čakanie 1
+    sem_wait(sem_barrier_mutex);
+        data->queueing_atoms++;
+
+        if(data->queueing_atoms == 3) {
+            sem_wait(sem_barrier_turnstile_2);
+            sem_post(sem_barrier_turnstile);
+        }
+
+        // Molecule number
+        data->bonding_atoms++; 
+        if(data->bonding_atoms > 2) {
+            if(data->bonding_atoms % 3 == 1) {
+                data->molecules = (data->bonding_atoms+2)/3;
+            }
+            else if(data->bonding_atoms % 3 == 2) {
+                data->molecules = (data->bonding_atoms+1)/3;
+            }
+            else {
+                data->molecules = data->bonding_atoms / 3;
+            }
+        }
+        // Set static molecule number to avoid change of molecule ID
+        int static_molecule_number = data->molecules;
+    sem_post(sem_barrier_mutex);
+    write_down(atom, num, "creating molecule", static_molecule_number, "");
+    wait_max(time_wait);
+
+    sem_wait(sem_barrier_turnstile);
+    sem_post(sem_barrier_turnstile);
+
+    // Critical point
+    write_down(atom, num, "molecule", static_molecule_number, "created");
+
+    // Čakanie 2
+    sem_wait(sem_barrier_mutex);
+        data->queueing_atoms--;
+        if(data->queueing_atoms == 0) {
+            sem_wait(sem_barrier_turnstile);
+            sem_post(sem_barrier_turnstile_2);
+        }
+    sem_post(sem_barrier_mutex);
+
+    sem_wait(sem_barrier_turnstile_2);
+    sem_post(sem_barrier_turnstile_2);
 }
 
 
@@ -334,7 +427,7 @@ int main(int argc, char *argv[]) {
                 } 
                 sem_wait(sem_oxygen);
                 create_H2O('O', count_oxygen, arg.TB);
-                sem_wait(sem_barrier);
+                //sem_wait(sem_barrier);
                 sem_post(sem_mutex);
             }
             else {

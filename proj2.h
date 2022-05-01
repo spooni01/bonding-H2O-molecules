@@ -22,6 +22,7 @@ typedef struct {
 	unsigned int hydrogen; 			// Number of remaining hydrogen atoms
 	unsigned int bonding_atoms; 	// Number of bonding atoms
 	unsigned int molecules;			// Number of created molecules
+	unsigned int queueing_atoms;	// Number of atoms in queue
 	unsigned int line;				// Number of lines
 
 	unsigned int act_oxygen;		// Number of used oxigen atoms
