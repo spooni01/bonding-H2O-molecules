@@ -29,6 +29,7 @@ sem_t *sem_mutex_barrier        = NULL;
 
 data_t *data;
 
+
 /** HELP FUNCTIONS **/
 
 // Check if text is made just from integers
@@ -101,8 +102,8 @@ void write_down(char atom_symbol, int atom_id, char message[30], int molecule_nu
     sem_post(sem_writing);
 }
 
-// Function wait int miliseconds and after
-// continue.
+// Function wait 'int miliseconds' and after that
+// continues.
 void wait_max(int miliseconds) {
     usleep((rand() % miliseconds)*1000);
 }
@@ -265,21 +266,33 @@ void create_H2O(char atom, int num, int time_wait) {
     data->bonding_atoms++;
     
     // Molecule number
-    if(data->bonding_atoms % 3 == 0) {
-        data->molecules = data->bonding_atoms / 3;
+    if(data->bonding_atoms > 2) {
+        if(data->bonding_atoms % 3 == 1) {
+            data->molecules = (data->bonding_atoms+2)/3;
+        }
+        else if(data->bonding_atoms % 3 == 2) {
+            data->molecules = (data->bonding_atoms+1)/3;
+        }
+        else {
+            data->molecules = data->bonding_atoms / 3;
+        }
     }
+
+    // Set static molecule number to avoid change of molecule ID
+    int static_molecule_number = data->molecules;
+
     sem_post(sem_mutex_barrier);
 
-    write_down(atom, num, "creating molecule", data->molecules, "");
+    write_down(atom, num, "creating molecule", static_molecule_number, "");
 
-    if(data->bonding_atoms++ % 3 == 1)
+    if(data->bonding_atoms % 3 == 0)
         sem_post(sem_barrier);
 
     sem_wait(sem_barrier);
     sem_post(sem_barrier);    
 
     wait_max(time_wait);
-    write_down(atom, num, "molecule", data->molecules, "created");
+    write_down(atom, num, "molecule", static_molecule_number, "created");
     sem_post(sem_molecule);
 }
 
